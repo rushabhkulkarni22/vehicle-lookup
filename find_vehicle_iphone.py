@@ -9,6 +9,12 @@ from urllib.parse import urlsplit
 
 BASE = 'https://www.carinfo.app/rc-details/'
 LIMIT = 3_000_000
+TLS_UNAVAILABLE = (
+    'This Python runner does not support secure HTTPS (TLS) connections. '
+    'Run this file in a Python app with HTTPS networking support, '
+    'or open the source URL in Safari. This cannot be fixed by changing '
+    'the vehicle number or disabling certificate verification.'
+)
 FIELDS = {
     'Make & Model': 'make_model', 'Owner Name': 'owner_name_masked',
     'Fuel Type': 'fuel_type', 'Vehicle Class': 'vehicle_class',
@@ -126,7 +132,15 @@ def lookup(plate):
         messages = {401: 'Login is required.', 403: 'CarInfo blocked automated access.',
                     404: 'That lookup page was not found.', 429: 'CarInfo is rate-limiting requests; try later.'}
         raise LookupError(messages.get(exc.code, f'CarInfo returned HTTP {exc.code}.') + ' No retry or bypass was attempted.') from None
-    except (urllib.error.URLError, TimeoutError, OSError):
+    except RuntimeError as exc:
+        if 'tls not supported' in str(exc).lower():
+            raise LookupError(TLS_UNAVAILABLE) from None
+        raise
+    except urllib.error.URLError as exc:
+        if 'tls not supported' in str(exc.reason).lower():
+            raise LookupError(TLS_UNAVAILABLE) from None
+        raise LookupError('Unable to connect to CarInfo. Check your connection or open the source URL in Safari.') from None
+    except (TimeoutError, OSError):
         raise LookupError('Unable to connect to CarInfo. Check your connection or open the source URL in Safari.') from None
     return parse_page(html, plate)
 
